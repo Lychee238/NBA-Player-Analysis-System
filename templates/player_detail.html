@@ -293,11 +293,19 @@
                     });
 
                     // 预测数据（虚线）
-                    if (data.predictions && data.predictions[key] !== undefined) {
-                        let predictedValue = data.predictions[key];
-                        // 如果是百分比数据，乘以100
+                    if (data.predictions && data.predictions[key]) {
+                        const prediction = data.predictions[key].value;
+                        const lowerBound = data.predictions[key].lower_bound;
+                        const upperBound = data.predictions[key].upper_bound;
+                        
+                        // 如果是百分比数据，转换为百分比
+                        let predictedValue = prediction;
+                        let lowerBoundValue = lowerBound;
+                        let upperBoundValue = upperBound;
                         if (key.includes('%')) {
                             predictedValue *= 100;
+                            lowerBoundValue *= 100;
+                            upperBoundValue *= 100;
                         }
                         
                         // 获取最后一年
@@ -313,6 +321,7 @@
                         // 添加预测年份到years数组
                         years.push(lastYear + 1, lastYear + 2);
                         
+                        // 添加预测数据
                         datasets.push({
                             label: `${label}预测`,
                             data: predictionData,
@@ -321,6 +330,20 @@
                             borderDash: [5, 5],
                             fill: false,
                             spanGaps: true
+                        });
+                        
+                        // 添加置信区间
+                        datasets.push({
+                            label: `${label}置信区间`,
+                            data: Array(actualData.length).fill(null).concat([
+                                [lowerBoundValue, upperBoundValue],
+                                [lowerBoundValue, upperBoundValue]
+                            ]),
+                            borderColor: color,
+                            backgroundColor: `${color}20`,
+                            fill: true,
+                            spanGaps: true,
+                            pointStyle: 'line'
                         });
                     }
                 });
@@ -348,6 +371,9 @@
                                 callbacks: {
                                     label: function(context) {
                                         const value = context.raw || 0;
+                                        if (Array.isArray(value)) {
+                                            return `${context.dataset.label}: ${value[0].toFixed(1)} - ${value[1].toFixed(1)}${yAxisLabel === '百分比' ? '%' : ''}`;
+                                        }
                                         return `${context.dataset.label}: ${value.toFixed(1)}${yAxisLabel === '百分比' ? '%' : ''}`;
                                     }
                                 }
@@ -472,18 +498,24 @@
             predictionInfo.style.display = 'block';
             
             const predictionsHtml = Object.entries(data.predictions)
-                .map(([metric, value]) => {
-                    const leagueAvg = data.league_averages[metric];
+                .map(([metric, prediction]) => {
+                    if (!prediction) return '';
+                    
+                    const value = prediction.value;
+                    const lowerBound = prediction.lower_bound;
+                    const upperBound = prediction.upper_bound;
+                    
                     return `
                         <div class="prediction-item">
                             <span class="label">${getMetricLabel(metric)}:</span>
                             <span class="value">
                                 ${value.toFixed(1)}
-                                ${leagueAvg ? `<small>(联盟平均: ${leagueAvg.toFixed(1)})</small>` : ''}
+                                <small>(置信区间: ${lowerBound.toFixed(1)} - ${upperBound.toFixed(1)})</small>
                             </span>
                         </div>
                     `;
                 })
+                .filter(html => html !== '')  // 移除空条目
                 .join('');
 
             predictionInfo.innerHTML = `

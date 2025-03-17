@@ -4,6 +4,8 @@ from jsonschema import ValidationError
 from .schemas import evaluate_schema, search_schema, year_schema
 import logging
 from datetime import datetime
+import pandas as pd
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -78,64 +80,71 @@ class PlayerRoutes:
                 player_name = data.get('player_name')
                 
                 if not player_name:
-                    return jsonify({
-                        'error': 'Missing player name',
-                        'message': 'Player name is required'
-                    }), 400
+                    return jsonify({'error': '未提供球员姓名'}), 400
                 
                 logger.info(f"开始评估球员: {player_name}")
                 
                 # 获取球员数据
                 player_data = self.data_loader.get_player_data(player_name)
                 if player_data is None or player_data.empty:
-                    logger.warning(f"未找到球员数据: {player_name}")
-                    return jsonify({
-                        'error': 'Player not found',
-                        'message': f'Could not find data for player: {player_name}'
-                    }), 404
+                    return jsonify({'error': f'未找到球员数据: {player_name}'}), 404
+                
+                # 计算生涯数据
+                career_stats = self.data_loader.calculate_career_stats(player_data)
+                
+                # 计算联盟平均数据
+                league_averages = self.data_loader.calculate_league_averages()
                 
                 # 生成预测
-                try:
-                    predictions = self.model_trainer.predict(player_data)
-                    logger.info(f"成功生成预测: {predictions}")
-                    
-                    # 获取球员生涯数据
-                    career_stats = self.data_loader.calculate_career_stats(player_data)
-                    
-                    # 处理 yearly_stats 中的 NaN 值
-                    yearly_stats = player_data.replace({float('nan'): None, float('inf'): None, float('-inf'): None})
-                    yearly_stats = yearly_stats.where(yearly_stats.notnull(), None)
-                    yearly_stats = yearly_stats.to_dict('records')
-                    
-                    # 计算百分位数
-                    league_averages = self.data_loader.calculate_league_averages()
-                    
-                    # 准备响应数据
-                    response_data = {
-                        'player_name': player_name,
-                        'predictions': {k: float(v) if v is not None else None for k, v in predictions.items()},
-                        'career_stats': {k: float(v) if isinstance(v, (int, float)) else v for k, v in career_stats.items()},
-                        'yearly_stats': yearly_stats,
-                        'league_averages': {k: float(v) if v is not None else None for k, v in league_averages.items()},
-                        'timestamp': datetime.now().isoformat()
-                    }
-                    
-                    logger.info(f"成功评估球员数据: {player_name}")
-                    return jsonify(response_data)
-                    
-                except Exception as e:
-                    logger.error(f"预测失败: {str(e)}", exc_info=True)
-                    return jsonify({
-                        'error': 'Prediction failed',
-                        'message': str(e)
-                    }), 500
+                predictions = self.model_trainer.predict(player_data)
+                
+                if predictions is None:
+                    return jsonify({'error': '预测失败'}), 500
+                
+                logger.info(f"成功生成预测: {predictions}")
+                
+                # 处理yearly_stats中的NaN值
+                yearly_stats = player_data.replace({float('nan'): None, float('inf'): None, float('-inf'): None})
+                yearly_stats = yearly_stats.where(yearly_stats.notnull(), None)
+                yearly_stats = yearly_stats.to_dict('records')
+                
+                # 处理career_stats中的数值
+                processed_career_stats = {}
+                for k, v in career_stats.items():
+                    if isinstance(v, (int, float)):
+                        if pd.isna(v) or np.isinf(v):
+                            processed_career_stats[k] = None
+                        else:
+                            processed_career_stats[k] = float(v)
+                    else:
+                        processed_career_stats[k] = v
+                
+                # 处理league_averages中的数值
+                processed_league_averages = {}
+                for k, v in league_averages.items():
+                    if isinstance(v, (int, float)):
+                        if pd.isna(v) or np.isinf(v):
+                            processed_league_averages[k] = None
+                        else:
+                            processed_league_averages[k] = float(v)
+                    else:
+                        processed_league_averages[k] = v
+                
+                # 准备返回数据
+                response_data = {
+                    'player_name': player_name,
+                    'career_stats': processed_career_stats,
+                    'yearly_stats': yearly_stats,
+                    'predictions': predictions,
+                    'league_averages': processed_league_averages,
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+                return jsonify(response_data)
                 
             except Exception as e:
-                logger.error(f"评估球员时发生错误: {str(e)}", exc_info=True)
-                return jsonify({
-                    'error': 'Evaluation failed',
-                    'message': str(e)
-                }), 500
+                logger.error(f"评估球员时出错: {str(e)}", exc_info=True)
+                return jsonify({'error': f'评估失败: {str(e)}'}), 500
 
         @player_bp.route('/api/players/names', methods=['GET'])
         @self.cache.cached(timeout=3600)
