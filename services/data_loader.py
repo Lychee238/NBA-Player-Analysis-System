@@ -119,11 +119,16 @@ class DataLoader:
     def calculate_career_stats(self, player_data):
         """计算球员生涯数据"""
         total_games = player_data['G'].sum()
+        
+        # 获取最新的位置信息
+        latest_position = player_data.iloc[-1]['Pos'] if 'Pos' in player_data.columns else 'N/A'
+        
         return {
             'G': int(total_games),
             'Seasons': int(len(player_data)),
             'Year_Start': int(player_data['Year'].min()),
             'Year_End': int(player_data['Year'].max()),
+            'Pos': str(latest_position),  # 确保位置信息是字符串类型
             'PTS': float(player_data['PTS'].sum() / total_games) if total_games > 0 else 0,
             'TRB': float(player_data['TRB'].sum() / total_games) if total_games > 0 else 0,
             'AST': float(player_data['AST'].sum() / total_games) if total_games > 0 else 0,

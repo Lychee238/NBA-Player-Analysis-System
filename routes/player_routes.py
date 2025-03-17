@@ -96,12 +96,12 @@ class PlayerRoutes:
                 league_averages = self.data_loader.calculate_league_averages()
                 
                 # 生成预测
-                predictions = self.model_trainer.predict(player_data)
+                prediction_result = self.model_trainer.predict(player_data)
                 
-                if predictions is None:
+                if prediction_result is None:
                     return jsonify({'error': '预测失败'}), 500
                 
-                logger.info(f"成功生成预测: {predictions}")
+                logger.info(f"成功生成预测: {prediction_result}")
                 
                 # 处理yearly_stats中的NaN值
                 yearly_stats = player_data.replace({float('nan'): None, float('inf'): None, float('-inf'): None})
@@ -135,7 +135,8 @@ class PlayerRoutes:
                     'player_name': player_name,
                     'career_stats': processed_career_stats,
                     'yearly_stats': yearly_stats,
-                    'predictions': predictions,
+                    'predictions': prediction_result['predictions'],
+                    'position_averages': prediction_result['position_averages'],
                     'league_averages': processed_league_averages,
                     'timestamp': datetime.now().isoformat()
                 }

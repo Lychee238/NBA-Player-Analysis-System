@@ -220,7 +220,16 @@
                     throw new Error('缺少生涯数据');
                 }
 
+                // 处理位置显示
+                let positions = data.career_stats.Pos || 'N/A';
+                if (typeof positions === 'string') {
+                    // 将"-"分隔的位置转换为"/"
+                    positions = positions.replace(/-/g, '/');
+                }
+                console.log('处理后的位置信息:', positions);  // 添加调试日志
+
                 const mainStats = [
+                    { label: '位置', value: positions },
                     { label: '生涯场均得分', value: data.career_stats.PTS?.toFixed(1) || 'N/A' },
                     { label: '生涯场均篮板', value: data.career_stats.TRB?.toFixed(1) || 'N/A' },
                     { label: '生涯场均助攻', value: data.career_stats.AST?.toFixed(1) || 'N/A' },
@@ -428,12 +437,29 @@
 
             // 使用生涯数据
             const careerStats = data.career_stats;
+            const positionAverages = data.position_averages || {};
+            let playerPosition = careerStats.Pos || 'Unknown';
+            
+            // 处理位置显示
+            if (typeof playerPosition === 'string') {
+                playerPosition = playerPosition.replace(/-/g, '/');
+            }
+            console.log('雷达图中的位置信息:', playerPosition);  // 调试日志
+            console.log('位置平均值数据:', positionAverages);  // 添加调试日志
             
             // 计算每个指标的值（标准化到0-100）
-            const values = metrics.map(metric => {
+            const playerValues = metrics.map(metric => {
                 let value = careerStats[metric.key] || 0;
-                
-                // 标准化到0-100
+                if (metric.key in ['PTS', 'TRB', 'AST', 'STL', 'BLK']) {
+                    // 对于基础数据，需要计算场均值
+                    value = careerStats.G > 0 ? value / careerStats.G : 0;
+                }
+                return (value / metric.maxValue) * 100;
+            });
+
+            // 使用位置平均值数据
+            const positionValues = metrics.map(metric => {
+                let value = positionAverages[metric.key] || 0;
                 return (value / metric.maxValue) * 100;
             });
 
@@ -442,23 +468,35 @@
                 type: 'radar',
                 data: {
                     labels: metrics.map(m => m.label),
-                    datasets: [{
-                        label: '生涯场均数据',
-                        data: values,
-                        backgroundColor: 'rgba(255, 99, 132, 0.2)',
-                        borderColor: 'rgb(255, 99, 132)',
-                        pointBackgroundColor: metrics.map(m => m.color),
-                        pointBorderColor: '#fff',
-                        pointHoverBackgroundColor: '#fff',
-                        pointHoverBorderColor: metrics.map(m => m.color)
-                    }]
+                    datasets: [
+                        {
+                            label: '球员数据',
+                            data: playerValues,
+                            backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                            borderColor: 'rgb(255, 99, 132)',
+                            pointBackgroundColor: metrics.map(m => m.color),
+                            pointBorderColor: '#fff',
+                            pointHoverBackgroundColor: '#fff',
+                            pointHoverBorderColor: metrics.map(m => m.color)
+                        },
+                        {
+                            label: `${playerPosition}位置平均值`,
+                            data: positionValues,
+                            backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                            borderColor: 'rgb(54, 162, 235)',
+                            pointBackgroundColor: 'rgb(54, 162, 235)',
+                            pointBorderColor: '#fff',
+                            pointHoverBackgroundColor: '#fff',
+                            pointHoverBorderColor: 'rgb(54, 162, 235)'
+                        }
+                    ]
                 },
                 options: {
                     responsive: true,
                     plugins: {
                         title: {
                             display: true,
-                            text: '球员生涯能力雷达图（相对历史最高值）',
+                            text: `球员能力雷达图（与${playerPosition}位置平均值对比）`,
                             font: {
                                 size: 16
                             }
@@ -497,6 +535,9 @@
 
             predictionInfo.style.display = 'block';
             
+            // 添加调试日志
+            console.log('预测数据:', data.predictions);
+            
             const predictionsHtml = Object.entries(data.predictions)
                 .map(([metric, prediction]) => {
                     if (!prediction) return '';
@@ -505,12 +546,27 @@
                     const lowerBound = prediction.lower_bound;
                     const upperBound = prediction.upper_bound;
                     
+                    // 获取指标的显示名称
+                    const label = getMetricLabel(metric);
+                    
+                    // 根据不同指标使用不同的格式化方式
+                    let formattedValue, formattedBounds;
+                    if (metric === 'BPM') {
+                        // BPM可以为负值，保留一位小数
+                        formattedValue = value.toFixed(1);
+                        formattedBounds = `${lowerBound.toFixed(1)} - ${upperBound.toFixed(1)}`;
+                    } else {
+                        // 其他指标使用非负值，保留一位小数
+                        formattedValue = Math.max(0, value).toFixed(1);
+                        formattedBounds = `${Math.max(0, lowerBound).toFixed(1)} - ${Math.max(0, upperBound).toFixed(1)}`;
+                    }
+                    
                     return `
                         <div class="prediction-item">
-                            <span class="label">${getMetricLabel(metric)}:</span>
+                            <span class="label">${label}:</span>
                             <span class="value">
-                                ${value.toFixed(1)}
-                                <small>(置信区间: ${lowerBound.toFixed(1)} - ${upperBound.toFixed(1)})</small>
+                                ${formattedValue}
+                                <small>(置信区间: ${formattedBounds})</small>
                             </span>
                         </div>
                     `;
